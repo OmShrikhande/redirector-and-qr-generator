@@ -1,10 +1,9 @@
 import express from 'express';
 import cors from 'cors';
-import mongoose from 'mongoose';
+import admin from 'firebase-admin';
 import dotenv from 'dotenv';
 import { nanoid } from 'nanoid';
 import QRCode from 'qrcode';
-import Link from './models/Link.js';
 
 dotenv.config();
 
@@ -15,127 +14,116 @@ app.use(express.json());
 const PORT = process.env.PORT || 3000;
 const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`; // used to build short urls
 
-// Connect to MongoDB
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/redirector';
-await mongoose.connect(MONGODB_URI, { autoIndex: true });
+// Initialize Firebase Admin
+admin.initializeApp({
+  credential: admin.credential.cert({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+  }),
+});
+
+const db = admin.firestore();
 
 // Health
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
-// Create short link (slug immutable)
+// Create short link
 app.post('/api/links', async (req, res) => {
   try {
-    const { destinationUrl, slug } = req.body || {};
-    if (!destinationUrl) return res.status(400).json({ error: 'destinationUrl is required' });
+    const { userId, destinationUrl, slug, customizations } = req.body || {};
+    if (!userId || !destinationUrl) return res.status(400).json({ error: 'userId and destinationUrl are required' });
 
     let finalSlug = slug?.trim() || nanoid(7);
-    // normalize slug
     finalSlug = finalSlug.replace(/[^a-zA-Z0-9-_]/g, '-');
 
-    // ensure uniqueness
-    const exists = await Link.findOne({ slug: finalSlug }).lean();
-    if (exists) return res.status(409).json({ error: 'slug already exists' });
+    // Check uniqueness
+    const exists = await db.collection('links').doc(finalSlug).get();
+    if (exists.exists) return res.status(409).json({ error: 'slug already exists' });
 
-    const doc = await Link.create({ slug: finalSlug, destinationUrl });
-    const shortUrl = `${BASE_URL}/r/${doc.slug}`;
+    const linkData = {
+      userId,
+      destinationUrl,
+      customizations: customizations || { logoUrl: '', borderColor: '#000000', bgColor: '#FFFFFF', fgColor: '#000000' },
+      scans: [],
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
 
-    // Generate QR as data URL (PNG). Frontend can also request by /api/links/:slug/qr
-    const qrDataUrl = await QRCode.toDataURL(shortUrl, { margin: 1, width: 256 });
+    await db.collection('links').doc(finalSlug).set(linkData);
 
-    res.status(201).json({ slug: doc.slug, destinationUrl: doc.destinationUrl, shortUrl, qrDataUrl });
+    res.status(201).json({ slug: finalSlug, ...linkData });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal error' });
   }
 });
 
-// Get all links (basic admin list)
-app.get('/api/links', async (_req, res) => {
-  const items = await Link.find().sort({ createdAt: -1 }).lean();
-  res.json(items.map(i => ({ slug: i.slug, destinationUrl: i.destinationUrl, createdAt: i.createdAt, updatedAt: i.updatedAt })));
+// Get links for user
+app.get('/api/links', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: 'userId required' });
+
+    const snapshot = await db.collection('links').where('userId', '==', userId).get();
+    const links = [];
+    snapshot.forEach(doc => {
+      links.push({ id: doc.id, ...doc.data() });
+    });
+    res.json(links);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal error' });
+  }
 });
 
-// Get single link
-app.get('/api/links/:slug', async (req, res) => {
-  const item = await Link.findOne({ slug: req.params.slug }).lean();
-  if (!item) return res.status(404).json({ error: 'Not found' });
-  const shortUrl = `${BASE_URL}/r/${item.slug}`;
-  res.json({ slug: item.slug, destinationUrl: item.destinationUrl, shortUrl });
-});
-
-// Update destination URL (slug immutable)
+// Update destination URL
 app.patch('/api/links/:slug', async (req, res) => {
   try {
-    const { destinationUrl } = req.body || {};
-    if (!destinationUrl) return res.status(400).json({ error: 'destinationUrl is required' });
+    const { userId, destinationUrl, customizations } = req.body || {};
+    if (!userId) return res.status(400).json({ error: 'userId required' });
 
-    const updated = await Link.findOneAndUpdate(
-      { slug: req.params.slug },
-      { $set: { destinationUrl } },
-      { new: true }
-    ).lean();
+    const docRef = db.collection('links').doc(req.params.slug);
+    const doc = await docRef.get();
+    if (!doc.exists) return res.status(404).json({ error: 'Not found' });
+    const data = doc.data();
+    if (data.userId !== userId) return res.status(403).json({ error: 'Forbidden' });
 
-    if (!updated) return res.status(404).json({ error: 'Not found' });
-    const shortUrl = `${BASE_URL}/r/${updated.slug}`;
-    res.json({ slug: updated.slug, destinationUrl: updated.destinationUrl, shortUrl });
+    const updateData = {};
+    if (destinationUrl) updateData.destinationUrl = destinationUrl;
+    if (customizations) updateData.customizations = customizations;
+    updateData.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+    await docRef.update(updateData);
+    res.json({ slug: req.params.slug, ...data, ...updateData });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Internal error' });
   }
 });
 
-// Optional: change slug AND retire old slug (as requested)
-app.post('/api/links/:slug/change-slug', async (req, res) => {
-  const { newSlug } = req.body || {};
-  if (!newSlug) return res.status(400).json({ error: 'newSlug is required' });
-  const final = newSlug.replace(/[^a-zA-Z0-9-_]/g, '-');
-  const occupied = await Link.findOne({ slug: final }).lean();
-  if (occupied) return res.status(409).json({ error: 'newSlug already exists' });
-
-  const session = await mongoose.startSession();
-  session.startTransaction();
-  try {
-    const current = await Link.findOne({ slug: req.params.slug }).session(session);
-    if (!current) {
-      await session.abortTransaction();
-      return res.status(404).json({ error: 'Not found' });
-    }
-    const dest = current.destinationUrl;
-    await Link.deleteOne({ slug: req.params.slug }).session(session);
-    const created = await Link.create([{ slug: final, destinationUrl: dest }], { session });
-    await session.commitTransaction();
-    const shortUrl = `${BASE_URL}/r/${final}`;
-    res.json({ slug: final, destinationUrl: dest, shortUrl });
-  } catch (e) {
-    await session.abortTransaction();
-    console.error(e);
-    res.status(500).json({ error: 'Internal error' });
-  } finally {
-    session.endSession();
-  }
-});
-
-// Generate QR endpoint (always same for same slug)
-app.get('/api/links/:slug/qr', async (req, res) => {
-  const item = await Link.findOne({ slug: req.params.slug }).lean();
-  if (!item) return res.status(404).json({ error: 'Not found' });
-  const shortUrl = `${BASE_URL}/r/${item.slug}`;
-  try {
-    const png = await QRCode.toBuffer(shortUrl, { margin: 1, width: 256 });
-    res.setHeader('Content-Type', 'image/png');
-    res.send(png);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'QR generation failed' });
-  }
-});
-
-// Redirect endpoint
+// Redirect endpoint with scan logging
 app.get('/r/:slug', async (req, res) => {
-  const item = await Link.findOne({ slug: req.params.slug }).lean();
-  if (!item) return res.status(404).send('Not found');
-  // 302 temporary redirect lets destination be updated later
-  res.redirect(302, item.destinationUrl);
+  try {
+    const docRef = db.collection('links').doc(req.params.slug);
+    const doc = await docRef.get();
+    if (!doc.exists) return res.status(404).send('Not found');
+
+    const data = doc.data();
+    const scan = {
+      ip: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('User-Agent'),
+      timestamp: new Date(),
+    };
+
+    await docRef.update({
+      scans: admin.firestore.FieldValue.arrayUnion(scan),
+    });
+
+    res.redirect(302, data.destinationUrl);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Internal error');
+  }
 });
 
 app.listen(PORT, () => console.log(`API listening on ${PORT}`));
