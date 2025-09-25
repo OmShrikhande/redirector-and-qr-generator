@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import QRCode from 'qrcode';
-import { BarChart3, Edit, Eye } from 'lucide-react';
+import { BarChart3, Download, Edit, Eye } from 'lucide-react';
 
 const LinkCard = ({ link, onUpdate }) => {
   const [qrUrl, setQrUrl] = useState('');
@@ -8,16 +8,22 @@ const LinkCard = ({ link, onUpdate }) => {
   const [editing, setEditing] = useState(false);
   const [newUrl, setNewUrl] = useState(link.destinationUrl);
 
+  const shortUrl = useMemo(
+    () => `http://192.168.137.1:3000/r/${link.slug}`,
+    [link.slug]
+  );
+
   React.useEffect(() => {
     const generateQR = async () => {
-      const url = `${window.location.origin}/r/${link.slug}`;
       const canvas = document.createElement('canvas');
-      await QRCode.toCanvas(canvas, url, {
+      await QRCode.toCanvas(canvas, shortUrl, {
         color: {
           dark: link.customizations.fgColor,
           light: link.customizations.bgColor,
         },
-        width: 200,
+        width: 220,
+        margin: 2,
+        errorCorrectionLevel: 'H',
       });
 
       if (link.customizations.logoUrl) {
@@ -25,10 +31,16 @@ const LinkCard = ({ link, onUpdate }) => {
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload = () => {
-          const size = 40;
+          const size = 58;
           const x = (canvas.width - size) / 2;
           const y = (canvas.height - size) / 2;
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(x + size / 2, y + size / 2, size / 2, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.clip();
           ctx.drawImage(img, x, y, size, size);
+          ctx.restore();
           setQrUrl(canvas.toDataURL());
         };
         img.onerror = () => {
@@ -40,64 +52,85 @@ const LinkCard = ({ link, onUpdate }) => {
       }
     };
     generateQR();
-  }, [link]);
+  }, [link, shortUrl]);
 
   const handleSave = () => {
     onUpdate(link.id, { destinationUrl: newUrl });
     setEditing(false);
   };
 
+  const downloadQr = () => {
+    if (!qrUrl) return;
+    const tempLink = document.createElement('a');
+    tempLink.href = qrUrl;
+    tempLink.download = `${link.slug || 'qr-code'}.png`;
+    tempLink.click();
+  };
+
   return (
-    <div className="bg-gray-800 p-4 rounded-lg shadow-lg">
-      <div className="flex justify-between items-start mb-4">
+    <div className="card link-card">
+      <div className="card-header">
         <div>
-          <h3 className="font-semibold text-lg">Slug: {link.slug}</h3>
-          <p className="text-gray-400 text-sm">URL: {window.location.origin}/r/{link.slug}</p>
+          <span className="badge">Slug</span>
+          <h3>{link.slug}</h3>
+          <p className="small mono">{shortUrl}</p>
         </div>
-        <div className="flex space-x-2">
-          <button onClick={() => setShowStats(!showStats)} className="p-2 bg-blue-600 rounded hover:bg-blue-700">
+        <div className="card-actions">
+          <button onClick={() => setShowStats(!showStats)} title="Toggle stats">
             <BarChart3 size={16} />
           </button>
-          <button onClick={() => setEditing(!editing)} className="p-2 bg-green-600 rounded hover:bg-green-700">
+          <button onClick={downloadQr} title="Download QR">
+            <Download size={16} />
+          </button>
+          <button onClick={() => setEditing(!editing)} title="Edit destination">
             <Edit size={16} />
           </button>
         </div>
       </div>
 
       {qrUrl && (
-        <div className="mb-4 flex justify-center">
-          <img src={qrUrl} alt="QR Code" className="border-2 border-gray-600 rounded" />
+        <div
+          className="qr preview-block"
+          style={{ borderColor: link.customizations.borderColor }}
+        >
+          <img src={qrUrl} alt={`QR code for ${shortUrl}`} />
         </div>
       )}
 
       {editing && (
-        <div className="mb-4">
-          <input
-            type="url"
-            value={newUrl}
-            onChange={(e) => setNewUrl(e.target.value)}
-            className="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <div className="flex space-x-2 mt-2">
-            <button onClick={handleSave} className="bg-green-600 hover:bg-green-700 px-4 py-2 rounded">Save</button>
-            <button onClick={() => setEditing(false)} className="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded">Cancel</button>
+        <div className="editor">
+          <div className="form-row">
+            <label>Destination URL</label>
+            <input
+              type="url"
+              value={newUrl}
+              onChange={(e) => setNewUrl(e.target.value)}
+            />
+          </div>
+          <div className="actions">
+            <button onClick={handleSave}>Save</button>
+            <button onClick={() => setEditing(false)} className="ghost-button">
+              Cancel
+            </button>
           </div>
         </div>
       )}
 
       {showStats && (
-        <div className="bg-gray-700 p-4 rounded">
-          <h4 className="font-semibold mb-2 flex items-center">
+        <div className="stats">
+          <div className="hr"></div>
+          <h4 className="flex items-center mb-2">
             <Eye className="mr-2" size={16} />
-            Scan Statistics
+            Scan statistics
           </h4>
-          <p>Total Scans: {link.scans?.length || 0}</p>
+          <p className="highlight">Total scans: {link.scans?.length || 0}</p>
           {link.scans && link.scans.length > 0 && (
-            <div className="mt-2 space-y-1">
-              <p className="text-sm text-gray-400">Recent scans:</p>
+            <div className="timeline">
+              <p className="small">Recent scans:</p>
               {link.scans.slice(-5).map((scan, index) => (
-                <div key={index} className="text-xs text-gray-300">
-                  {new Date(scan.timestamp).toLocaleString()} - {scan.ip}
+                <div key={index} className="timeline-item">
+                  <span>{new Date(scan.timestamp).toLocaleString()}</span>
+                  <span className="mono">{scan.ip}</span>
                 </div>
               ))}
             </div>

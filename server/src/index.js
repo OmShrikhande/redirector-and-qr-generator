@@ -67,7 +67,7 @@ app.get('/api/links', async (req, res) => {
     const snapshot = await db.collection('links').where('userId', '==', userId).get();
     const links = [];
     snapshot.forEach(doc => {
-      links.push({ id: doc.id, ...doc.data() });
+      links.push({ id: doc.id, slug: doc.id, ...doc.data() });
     });
     res.json(links);
   } catch (err) {

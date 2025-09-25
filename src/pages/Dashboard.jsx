@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import CreateLinkForm from '../components/CreateLinkForm';
 import LinkCard from '../components/LinkCard';
@@ -40,31 +40,66 @@ const Dashboard = () => {
     fetchLinks();
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center">Loading...</div>;
+  const profileInitials = useMemo(() => {
+    if (!user) return 'QR';
+    const source = user.displayName || user.email || 'QR';
+    const nameParts = source.trim().split(/\s+/);
+    if (nameParts.length === 1) {
+      return nameParts[0].slice(0, 2).toUpperCase();
+    }
+    return `${nameParts[0][0]}${nameParts[nameParts.length - 1][0]}`.toUpperCase();
+  }, [user]);
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center text-white">Loading...</div>;
+  }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <header className="bg-gray-800 p-4 flex justify-between items-center">
-        <h1 className="text-2xl font-bold">QR Redirector Dashboard</h1>
-        <div className="flex items-center space-x-4">
-          <span>Welcome, {user.email}</span>
-          <button onClick={logout} className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 px-4 py-2 rounded">
-            <LogOut size={16} />
-            <span>Logout</span>
+    <div className="min-h-screen text-white">
+      <header className="header panel dashboard-header">
+        <div className="header-title">
+          <span className="badge accent">Dashboard</span>
+          <h1>Creative QR Studio</h1>
+          <p className="subtitle">Design, launch, and monitor personalized QR experiences in seconds.</p>
+        </div>
+        <div className="profile">
+          <div className="profile-info">
+            <span className="small">Welcome back</span>
+            <strong>{user.displayName || user.email}</strong>
+          </div>
+          <div className="profile-avatar">
+            {user?.photoURL ? (
+              <img src={user.photoURL} alt={user.displayName || user.email} />
+            ) : (
+              <span>{profileInitials}</span>
+            )}
+          </div>
+          <button onClick={logout} className="ghost-button logout-button">
+            <LogOut size={18} />
+            <span>Sign out</span>
           </button>
         </div>
       </header>
-      <main className="container mx-auto p-6">
+
+      <main className="container dashboard-grid">
         <CreateLinkForm onAdd={addLink} />
-        <div className="mt-8">
-          <h2 className="text-xl font-semibold mb-4">Your Links</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {links.map(link => (
+        <section className="panel links-panel">
+          <div className="panel-heading">
+            <span className="badge accent">Library</span>
+            <h2>Your QR collection</h2>
+            <p className="small">Tap any card to view analytics, refresh URLs, or download the code.</p>
+          </div>
+          <div className="links-grid">
+            {links.map((link) => (
               <LinkCard key={link.id} link={link} onUpdate={updateLink} />
             ))}
           </div>
-          {links.length === 0 && <p className="text-gray-400">No links yet. Create your first one!</p>}
-        </div>
+          {links.length === 0 && (
+            <p className="empty-state">
+              You haven&apos;t created any QR links yet. Craft your first one with the form on the left!
+            </p>
+          )}
+        </section>
       </main>
     </div>
   );

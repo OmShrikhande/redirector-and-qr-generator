@@ -26,45 +26,43 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-900">
-      <div className="bg-gray-800 p-8 rounded-lg shadow-lg w-full max-w-md">
-        <h2 className="text-2xl font-bold text-white mb-6 text-center">
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="panel w-full max-w-md">
+        <h2 className="text-center mb-6">
           {isLogin ? 'Login' : 'Register'}
         </h2>
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-gray-300 mb-2">Email</label>
+        <form onSubmit={handleSubmit} className="form-grid">
+          <div className="form-row">
+            <label>Email</label>
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
-          <div className="mb-6">
-            <label className="block text-gray-300 mb-2">Password</label>
+          <div className="form-row">
+            <label>Password</label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 text-white rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
           </div>
-          {error && <p className="text-red-500 mb-4">{error}</p>}
-          <button
-            type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-          >
-            {isLogin ? 'Login' : 'Register'}
-          </button>
+          {error && <p className="text-red-500">{error}</p>}
+          <div className="actions">
+            <button type="submit" className="flex-1">
+              {isLogin ? 'Login' : 'Register'}
+            </button>
+          </div>
         </form>
-        <p className="text-gray-400 mt-4 text-center">
+        <div className="hr"></div>
+        <p className="small text-center">
           {isLogin ? "Don't have an account?" : 'Already have an account?'}
           <button
             onClick={() => setIsLogin(!isLogin)}
-            className="text-blue-500 ml-2 hover:underline"
+            className="ml-2"
           >
             {isLogin ? 'Register' : 'Login'}
           </button>
