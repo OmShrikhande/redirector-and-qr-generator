@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import QRCode from 'qrcode';
-import { BarChart3, Download, Edit, Eye } from 'lucide-react';
+import { BarChart3, Download, Edit, Eye, Trash2 } from 'lucide-react';
 
-const LinkCard = ({ link, onUpdate }) => {
+const LinkCard = ({ link, onUpdate, onDelete }) => {
   const [qrUrl, setQrUrl] = useState('');
   const [showStats, setShowStats] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -67,6 +67,14 @@ const LinkCard = ({ link, onUpdate }) => {
     tempLink.click();
   };
 
+  const handleDelete = () => {
+    if (!onDelete) return;
+    const confirmed = window.confirm(`Delete QR for “${link.slug}”? This cannot be undone.`);
+    if (confirmed) {
+      onDelete(link.id);
+    }
+  };
+
   return (
     <div className="card link-card">
       <div className="card-header">
@@ -84,6 +92,9 @@ const LinkCard = ({ link, onUpdate }) => {
           </button>
           <button onClick={() => setEditing(!editing)} title="Edit destination">
             <Edit size={16} />
+          </button>
+          <button onClick={handleDelete} title="Delete QR">
+            <Trash2 size={16} />
           </button>
         </div>
       </div>

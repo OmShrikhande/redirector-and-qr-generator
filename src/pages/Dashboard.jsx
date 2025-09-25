@@ -40,6 +40,13 @@ const Dashboard = () => {
     fetchLinks();
   };
 
+  const deleteLink = async (id) => {
+    await fetch(`/api/links/${id}?userId=${user.id}`, {
+      method: 'DELETE',
+    });
+    fetchLinks();
+  };
+
   const profileInitials = useMemo(() => {
     if (!user) return 'QR';
     const source = user.displayName || user.email || 'QR';
@@ -91,7 +98,12 @@ const Dashboard = () => {
           </div>
           <div className="links-grid">
             {links.map((link) => (
-              <LinkCard key={link.id} link={link} onUpdate={updateLink} />
+              <LinkCard
+                key={link.id}
+                link={link}
+                onUpdate={updateLink}
+                onDelete={deleteLink}
+              />
             ))}
           </div>
           {links.length === 0 && (
